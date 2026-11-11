@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/9 completed
+**SIs:** 7/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
 - **Status:** completed
@@ -54,9 +54,12 @@
   - The integration test wires `VideoProcessingService` + `MediaToolsService` without `VideoProcessingModule`, so no BullMQ worker is started inside Jest (it would consume the shared queue); `createVideosTestingModule` gained an optional `providers` argument.
 
 ### SI-03.7 — Worker Entrypoint and Container
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** worker.module.spec 1/1 (+ openapi-export.integration-spec 9/9 re-run after the AppModule factory extraction); runtime check: `docker compose ps` → video-worker Up, log 'Video worker ready — consuming the video-processing queue'
+- **Observations:**
+  - **Fixed during the SI:** first boot of the worker failed with `Entity metadata for Video#channel was not found` — `autoLoadEntities` only knew `Video`. `VideoProcessingModule` now imports `UsersModule` (which imports `ChannelsModule`), registering the `Video → Channel → User` graph through the owning modules.
+  - Right after boot the worker consumed the jobs left in Redis by the SI-03.5 tests and logged `Skipping video …: not found` for each — the idempotent-consumer behaviour of TD-09 observed live.
+  - `start:worker:dev` runs `node --watch -r ts-node/register src/worker.ts` with `TS_NODE_TRANSPILE_ONLY=true` (no `dist/` sharing with the API's `nest start --watch`, which deletes `dist` on start); `node --watch` restarted the worker automatically when the module file changed.
 
 ### SI-03.8 — Read Endpoints: Video, Owner Status, Stream, Download and Thumbnail
 - **Status:** pending
