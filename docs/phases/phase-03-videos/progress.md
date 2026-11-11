@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/9 completed
+**SIs:** 8/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
 - **Status:** completed
@@ -62,9 +62,12 @@
   - `start:worker:dev` runs `node --watch -r ts-node/register src/worker.ts` with `TS_NODE_TRANSPILE_ONLY=true` (no `dist/` sharing with the API's `nest start --watch`, which deletes `dist` on start); `node --watch` restarted the worker automatically when the module file changed.
 
 ### SI-03.8 — Read Endpoints: Video, Owner Status, Stream, Download and Thumbnail
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** unit: videos.service.spec 35/35 (+12 read rules, attachmentDisposition); e2e: full `npm run test:e2e` 5 suites / 66 tests green — new test/video-pipeline.e2e-spec.ts 3/3 (≈12.8 MB video uploaded in 3 presigned parts → processed by the real `video-worker` container in ~3 s → `/stream` 302 → `Range: bytes=0-1023` answered `206` with `Content-Range`; `/download` 302 → `Content-Disposition` with `filename*=UTF-8''F%C3%A9rias%20na%20praia.mp4` and byte-identical body; `/thumbnail` 302 → `image/jpeg`; non-video upload → `failed` + public 404; drafts hidden from public routes)
+- **Observations:**
+  - **Test infra:** `test/jest-e2e.json` gained `"maxWorkers": 1`. The e2e suites share the `db` database and call `cleanAllTables()`; with five suites Jest would run them in parallel workers (the script has no `--runInBand`), wiping rows the pipeline test is waiting on. `nestjs-project/CLAUDE.md` already states e2e must run in band — the config now enforces it.
+  - The pipeline e2e overrides the `video` config namespace with 5 MiB parts (`overrideProvider(videoConfig.KEY)`) so a 12.8 MB sample exercises a real 3-part multipart upload; the worker container keeps its own config.
+  - Public routes return `302` through `@Redirect()` with a dynamic URL; the Location host is `minio.localhost:9000` (S3_PUBLIC_ENDPOINT) and the test container follows it through the Compose alias — the same URL a browser on the host would get.
 
 ### SI-03.9 — OpenAPI Contract and AI Documentation
 - **Status:** pending

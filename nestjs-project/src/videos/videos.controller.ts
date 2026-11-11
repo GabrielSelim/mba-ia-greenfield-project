@@ -2,14 +2,17 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
   Post,
+  Redirect,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiTags,
   getSchemaPath,
@@ -17,17 +20,43 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { CompleteUploadDto, SignUploadPartsDto } from './dto/upload-parts.dto';
 import {
+  PublicVideoDto,
   SignedUploadPartsDto,
   VideoDraftResponseDto,
+  VideoStatusDto,
   VideoSummaryDto,
 } from './dto/video-responses.dto';
 import { VideosService } from './videos.service';
 
 const errorSchema = { $ref: getSchemaPath(ApiErrorEnvelope) };
+
+interface RedirectResponse {
+  url: string;
+  statusCode: number;
+}
+
+const redirectResponse = (description: string) =>
+  ApiResponse({
+    status: 302,
+    description,
+    headers: {
+      Location: {
+        description: 'Presigned object storage URL (short-lived)',
+        schema: { type: 'string', format: 'uri' },
+      },
+    },
+  });
+
+const notReadyResponse = ApiResponse({
+  status: 404,
+  description: 'Unknown slug or video not ready',
+  schema: errorSchema,
+});
 
 @ApiTags('videos')
 @Controller('videos')
@@ -36,6 +65,104 @@ const errorSchema = { $ref: getSchemaPath(ApiErrorEnvelope) };
 @Throttle({ default: { limit: 120, ttl: 60000 } })
 export class VideosController {
   constructor(private readonly videosService: VideosService) {}
+
+  @Public()
+  @Get(':slug')
+  @ApiParam({ name: 'slug', description: 'Unique URL id of the video' })
+  @ApiOperation({
+    summary: 'Get a video by its unique URL',
+    description:
+      'Public. Returns a ready video with its duration, metadata, channel and the stream/download/thumbnail URLs. Videos that are not ready answer 404.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Ready video',
+    type: PublicVideoDto,
+  })
+  @notReadyResponse
+  findOne(@Param('slug') slug: string): Promise<PublicVideoDto> {
+    return this.videosService.getPublicVideo(slug);
+  }
+
+  @Get(':slug/status')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Processing status (owner)',
+    description:
+      'Returns the status of one of the caller videos: draft, processing, ready or failed (with processing_error).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Video status',
+    type: VideoStatusDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found for this user',
+    schema: errorSchema,
+  })
+  status(
+    @CurrentUser() user: JwtPayload,
+    @Param('slug') slug: string,
+  ): Promise<VideoStatusDto> {
+    return this.videosService.getOwnerStatus(user.sub, slug);
+  }
+
+  @Public()
+  @Get(':slug/stream')
+  @Redirect()
+  @ApiOperation({
+    summary: 'Stream the video',
+    description:
+      'Public. Redirects to a short-lived storage URL that supports HTTP Range requests (206 Partial Content), so players start and seek without downloading the whole file.',
+  })
+  @redirectResponse('Redirect to the streamable file')
+  @notReadyResponse
+  async stream(@Param('slug') slug: string): Promise<RedirectResponse> {
+    return {
+      url: await this.videosService.getStreamUrl(slug),
+      statusCode: HttpStatus.FOUND,
+    };
+  }
+
+  @Public()
+  @Get(':slug/download')
+  @Redirect()
+  @ApiOperation({
+    summary: 'Download the video',
+    description:
+      'Public. Redirects to a short-lived storage URL served with Content-Disposition: attachment and the original filename.',
+  })
+  @redirectResponse('Redirect to the download')
+  @notReadyResponse
+  async download(@Param('slug') slug: string): Promise<RedirectResponse> {
+    return {
+      url: await this.videosService.getDownloadUrl(slug),
+      statusCode: HttpStatus.FOUND,
+    };
+  }
+
+  @Public()
+  @Get(':slug/thumbnail')
+  @Redirect()
+  @ApiOperation({
+    summary: 'Video thumbnail',
+    description:
+      'Public. Redirects to the JPEG thumbnail generated from a frame of the video.',
+  })
+  @redirectResponse('Redirect to the JPEG thumbnail')
+  @notReadyResponse
+  async thumbnail(@Param('slug') slug: string): Promise<RedirectResponse> {
+    return {
+      url: await this.videosService.getThumbnailUrl(slug),
+      statusCode: HttpStatus.FOUND,
+    };
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)

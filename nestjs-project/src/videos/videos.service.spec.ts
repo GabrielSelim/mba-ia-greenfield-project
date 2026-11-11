@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
+import appConfig from '../config/app.config';
 import videoConfig from '../config/video.config';
 import {
   PROCESS_VIDEO_JOB,
@@ -22,7 +23,7 @@ import {
   VideoNotInDraftException,
   VideoTooLargeException,
 } from './videos.exceptions';
-import { VideosService } from './videos.service';
+import { attachmentDisposition, VideosService } from './videos.service';
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
@@ -62,6 +63,8 @@ describe('VideosService', () => {
     update: jest.fn(),
     delete: jest.fn(),
     createQueryBuilder: jest.fn(),
+    findOne: jest.fn(),
+    findOneBy: jest.fn(),
   };
   const manager = { update: jest.fn() };
   const dataSource = { transaction: jest.fn() };
@@ -74,6 +77,7 @@ describe('VideosService', () => {
     completeMultipartUpload: jest.fn(),
     headObject: jest.fn(),
     deleteObject: jest.fn(),
+    presignGetObject: jest.fn(),
   };
 
   const dto: CreateVideoDto = {
@@ -108,6 +112,10 @@ describe('VideosService', () => {
         { provide: ChannelsService, useValue: channelsService },
         { provide: StorageService, useValue: storage },
         { provide: videoConfig.KEY, useValue: config },
+        {
+          provide: appConfig.KEY,
+          useValue: { url: 'http://localhost:3000' },
+        },
       ],
     }).compile();
     service = moduleRef.get(VideosService);
@@ -434,5 +442,132 @@ describe('VideosService', () => {
         status: VideoStatus.DRAFT,
       });
     });
+  });
+
+  function readyVideo(overrides: Partial<Video> = {}): Video {
+    return draftVideo({
+      status: VideoStatus.READY,
+      upload_id: null,
+      original_filename: 'Férias na praia.mp4',
+      thumbnail_key: 'videos/video-1/thumbnail.jpg',
+      duration_seconds: 12.5,
+      metadata: null,
+      channel: { nickname: 'gabriel', name: 'Gabriel' } as Video['channel'],
+      ...overrides,
+    });
+  }
+
+  describe('read endpoints', () => {
+    beforeEach(() => {
+      storage.presignGetObject.mockResolvedValue(
+        'http://minio.localhost:9000/signed',
+      );
+    });
+
+    it('should only look up ready videos for the public', async () => {
+      repository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.getPublicVideo('abcdefghijk'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+      expect(repository.findOne).toHaveBeenCalledWith({
+        where: { slug: 'abcdefghijk', status: VideoStatus.READY },
+        relations: { channel: true },
+      });
+    });
+
+    it('should expose stable API URLs for a ready video', async () => {
+      repository.findOne.mockResolvedValue(readyVideo());
+
+      const result = await service.getPublicVideo('abcdefghijk');
+
+      expect(result).toMatchObject({
+        slug: 'abcdefghijk',
+        status: VideoStatus.READY,
+        duration_seconds: 12.5,
+        channel: { nickname: 'gabriel', name: 'Gabriel' },
+        stream_url: 'http://localhost:3000/videos/abcdefghijk/stream',
+        download_url: 'http://localhost:3000/videos/abcdefghijk/download',
+        thumbnail_url: 'http://localhost:3000/videos/abcdefghijk/thumbnail',
+      });
+    });
+
+    it('should return any status to the owner, including the failure reason', async () => {
+      queryBuilder.getOne.mockResolvedValue(
+        draftVideo({
+          status: VideoStatus.FAILED,
+          processing_error: 'not a video',
+        }),
+      );
+
+      const result = await service.getOwnerStatus('user-1', 'abcdefghijk');
+
+      expect(result).toMatchObject({
+        status: VideoStatus.FAILED,
+        processing_error: 'not a video',
+      });
+    });
+
+    it.each([
+      ['stream', (svc: VideosService) => svc.getStreamUrl('s')],
+      ['download', (svc: VideosService) => svc.getDownloadUrl('s')],
+      ['thumbnail', (svc: VideosService) => svc.getThumbnailUrl('s')],
+    ])('should 404 the %s of a video that is not ready', async (_n, call) => {
+      repository.findOneBy.mockResolvedValue(null);
+
+      await expect(call(service)).rejects.toBeInstanceOf(
+        VideoNotFoundException,
+      );
+    });
+
+    it('should sign the stream URL for the public endpoint with the content type', async () => {
+      repository.findOneBy.mockResolvedValue(readyVideo());
+
+      await service.getStreamUrl('abcdefghijk');
+
+      expect(storage.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/original',
+        { expiresIn: 3600, audience: 'public', contentType: 'video/mp4' },
+      );
+    });
+
+    it('should sign the download URL with an attachment disposition', async () => {
+      repository.findOneBy.mockResolvedValue(readyVideo());
+
+      await service.getDownloadUrl('abcdefghijk');
+
+      expect(storage.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/original',
+        expect.objectContaining({
+          audience: 'public',
+          contentDisposition: attachmentDisposition('Férias na praia.mp4'),
+        }),
+      );
+    });
+
+    it('should sign the thumbnail as JPEG', async () => {
+      repository.findOneBy.mockResolvedValue(readyVideo());
+
+      await service.getThumbnailUrl('abcdefghijk');
+
+      expect(storage.presignGetObject).toHaveBeenCalledWith(
+        'videos/video-1/thumbnail.jpg',
+        expect.objectContaining({ contentType: 'image/jpeg' }),
+      );
+    });
+  });
+});
+
+describe('attachmentDisposition', () => {
+  it('should keep ASCII names and add the RFC 5987 UTF-8 form', () => {
+    expect(attachmentDisposition('clip.mp4')).toBe(
+      `attachment; filename="clip.mp4"; filename*=UTF-8''clip.mp4`,
+    );
+  });
+
+  it('should replace non-ASCII and quotes in the fallback and encode the UTF-8 name', () => {
+    expect(attachmentDisposition('Férias "1".mp4')).toBe(
+      `attachment; filename="F_rias _1_.mp4"; filename*=UTF-8''F%C3%A9rias%20%221%22.mp4`,
+    );
   });
 });

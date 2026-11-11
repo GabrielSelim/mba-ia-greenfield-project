@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ChannelsService } from '../channels/channels.service';
+import appConfig from '../config/app.config';
 import videoConfig from '../config/video.config';
 import {
   PROCESS_VIDEO_JOB,
@@ -18,8 +19,10 @@ import { StorageService } from '../storage/storage.service';
 import { CreateVideoDto } from './dto/create-video.dto';
 import { CompletedPartDto } from './dto/upload-parts.dto';
 import {
+  PublicVideoDto,
   SignedUploadPartsDto,
   VideoDraftResponseDto,
+  VideoStatusDto,
   VideoSummaryDto,
 } from './dto/video-responses.dto';
 import { Video, VideoStatus } from './entities/video.entity';
@@ -60,6 +63,19 @@ function defaultTitle(filename: string): string {
   return name.slice(0, TITLE_MAX_LENGTH);
 }
 
+/**
+ * RFC 6266 / RFC 5987: ASCII fallback plus the exact UTF-8 name, so
+ * "Férias.mp4" downloads with its accents in modern browsers.
+ */
+export function attachmentDisposition(filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const encoded = encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
 export function toVideoSummary(video: Video): VideoSummaryDto {
   return {
     id: video.id,
@@ -84,7 +100,80 @@ export class VideosService {
     private readonly processingQueue: Queue<ProcessVideoJobData>,
     @Inject(videoConfig.KEY)
     private readonly config: ConfigType<typeof videoConfig>,
+    @Inject(appConfig.KEY)
+    private readonly app: ConfigType<typeof appConfig>,
   ) {}
+
+  /**
+   * Public read by unique URL — only `ready` videos exist for the public
+   * (technical-decisions-phase-03-videos TD-11).
+   */
+  async getPublicVideo(slug: string): Promise<PublicVideoDto> {
+    const video = await this.videoRepository.findOne({
+      where: { slug, status: VideoStatus.READY },
+      relations: { channel: true },
+    });
+    if (!video) throw new VideoNotFoundException();
+
+    const base = `${this.app.url}/videos/${video.slug}`;
+    return {
+      ...toVideoSummary(video),
+      duration_seconds: video.duration_seconds,
+      metadata: video.metadata,
+      channel: { nickname: video.channel.nickname, name: video.channel.name },
+      stream_url: `${base}/stream`,
+      download_url: `${base}/download`,
+      thumbnail_url: `${base}/thumbnail`,
+    };
+  }
+
+  /** Any status, owner only — lets the uploader follow the processing. */
+  async getOwnerStatus(userId: string, slug: string): Promise<VideoStatusDto> {
+    const video = await this.findOwnedVideo(userId, slug);
+    return {
+      slug: video.slug,
+      title: video.title,
+      status: video.status,
+      duration_seconds: video.duration_seconds,
+      processing_error: video.processing_error,
+      created_at: video.created_at,
+      updated_at: video.updated_at,
+      processed_at: video.processed_at,
+    };
+  }
+
+  /**
+   * Presigned URL for progressive playback (TD-08): the storage answers
+   * `Range` requests with `206 Partial Content`.
+   */
+  async getStreamUrl(slug: string): Promise<string> {
+    const video = await this.findReadyVideo(slug);
+    return this.storage.presignGetObject(video.storage_key, {
+      expiresIn: this.config.urlTtlSeconds,
+      audience: 'public',
+      contentType: video.content_type,
+    });
+  }
+
+  async getDownloadUrl(slug: string): Promise<string> {
+    const video = await this.findReadyVideo(slug);
+    return this.storage.presignGetObject(video.storage_key, {
+      expiresIn: this.config.urlTtlSeconds,
+      audience: 'public',
+      contentType: video.content_type,
+      contentDisposition: attachmentDisposition(video.original_filename),
+    });
+  }
+
+  async getThumbnailUrl(slug: string): Promise<string> {
+    const video = await this.findReadyVideo(slug);
+    if (!video.thumbnail_key) throw new VideoNotFoundException();
+    return this.storage.presignGetObject(video.thumbnail_key, {
+      expiresIn: this.config.urlTtlSeconds,
+      audience: 'public',
+      contentType: 'image/jpeg',
+    });
+  }
 
   /**
    * Pre-registers the video as `draft` and opens the S3 multipart upload
@@ -271,6 +360,15 @@ export class VideosService {
       .where('video.slug = :slug', { slug })
       .andWhere('channel.user_id = :userId', { userId })
       .getOne();
+    if (!video) throw new VideoNotFoundException();
+    return video;
+  }
+
+  private async findReadyVideo(slug: string): Promise<Video> {
+    const video = await this.videoRepository.findOneBy({
+      slug,
+      status: VideoStatus.READY,
+    });
     if (!video) throw new VideoNotFoundException();
     return video;
   }
