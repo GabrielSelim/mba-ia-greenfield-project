@@ -1,6 +1,6 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
+**Status:** completed
 **SIs:** 9/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
@@ -79,3 +79,25 @@
   - `CLAUDE.md` (root: queue = BullMQ/Redis, MinIO, worker) and `nestjs-project/CLAUDE.md` (new services and readiness checks, worker/migration/openapi commands, e2e `maxWorkers: 1`, ESLint test overrides, new 'Videos (Phase 03)' section with code map, endpoints, lifecycle, env vars and gotchas). Every `src/`, `test/`, `docs/` path and npm script cited was checked to exist.
   - `api.http` gained the video requests (10–18); `docs/diagrams/software-arch.mermaid` queue container changed from `TBD` to `BullMQ (Redis)`.
   - `next-frontend/openapi.json` was not synced (`scripts/sync-openapi.sh`): the frontend is out of scope for this phase.
+
+## Final verification (Definition of Done)
+
+Run on a **fresh environment** built only from the committed tree (`git archive HEAD nestjs-project` on the dev host → `cp .env.example .env` → `docker compose up -d --build` → `npm ci` → `npm run migration:run`), 2026-11-11:
+
+| Check | Result |
+|-------|--------|
+| `docker compose ps` | db, mailpit, redis, minio, nestjs-api, video-worker Up; minio-init Exited (0) — `bucket streamtube-videos ready` |
+| `npm test -- --runInBand` (unit + integration) | 36 suites, **244/244 passing** |
+| `npm run test:e2e` | 5 suites, **66/66 passing** (includes the full pipeline through the `video-worker` container) |
+| `npx tsc --noEmit` | exit 0 |
+| `npm run lint` | exit 0 — 0 errors, 40 warnings (all pre-existing in Phase 02 test files; none in Phase 03 code) |
+| `npm run build` | exit 0 — `dist/main.js` and `dist/worker.js` |
+| `npm run start:worker` (compiled) | `Video worker ready — consuming the video-processing queue` |
+
+Execution mode: the user delegated the whole activity, so SIs ran back-to-back (continuous mode) with a commit per SI on `feature/phase-03-videos`.
+
+### Follow-ups (out of scope, not acted on)
+
+- Abandoned drafts keep an open multipart upload until aborted — a periodic cleanup (or a bucket lifecycle rule `AbortIncompleteMultipartUpload` in production) belongs to a later task (noted in TD-09).
+- `next-frontend/openapi.json` was not synced with the new contract (frontend out of scope); run `scripts/sync-openapi.sh` when the video UI phase starts.
+- The 40 pre-existing ESLint warnings (`no-unsafe-argument`, `no-floating-promises`) in Phase 02 tests remain as they were.

@@ -55,12 +55,15 @@ O diagrama de arquitetura completo (C4) está em `docs/diagrams/software-arch.me
 
 Os dois subprojetos têm stacks Docker **separadas**. Suba primeiro o backend, rode as migrations e depois o frontend.
 
-### 1. Backend (NestJS + PostgreSQL + Mailpit)
+### 1. Backend (NestJS + PostgreSQL + Mailpit + MinIO + Redis + worker de vídeo)
 
 ```bash
 cd nestjs-project
 
-# Sobe API, banco e Mailpit
+# Variáveis de ambiente (o Docker Compose também lê o .env — credenciais do MinIO)
+cp .env.example .env
+
+# Sobe API, banco, Mailpit, MinIO (+ criação do bucket), Redis e o video-worker
 docker compose up -d
 
 # Instala dependências (apenas na primeira vez)
@@ -80,6 +83,9 @@ Serviços disponíveis:
 | API NestJS | http://localhost:3000 |
 | PostgreSQL | `localhost:5432` (db/user/senha: `streamtube`) |
 | Mailpit (UI de e-mails) | http://localhost:8025 |
+| MinIO (API S3 — vídeos e thumbnails) | http://minio.localhost:9000 (as URLs pré-assinadas usam esse host) |
+| Redis (fila BullMQ) | interno à rede do Compose |
+| Worker de vídeo (FFmpeg) | container `video-worker` — `docker compose logs video-worker` |
 | Swagger (opcional) | http://localhost:3000/api/docs — habilite com `SWAGGER_ENABLED=true` |
 
 ### 2. Frontend (Next.js)
@@ -124,7 +130,23 @@ Sufixos: `*.test.ts(x)` (unitário), `*.integration.test.ts(x)` (Route Handlers 
 
 ## ✅ Funcionalidades implementadas
 
-**Fase 01 — Configuração base** e **Fase 02 — Autenticação** estão concluídas (backend + frontend).
+**Fase 01 — Configuração base** e **Fase 02 — Autenticação** estão concluídas (backend + frontend). **Fase 03 — Upload e Processamento de Vídeos** está concluída no backend (a interface de vídeo fica para as próximas fases).
+
+### Vídeos (Fase 03)
+
+Upload de até **10 GiB direto no object storage** (S3 multipart com URLs pré-assinadas — o arquivo nunca passa pela API), **pré-cadastro como rascunho**, **processamento automático** num worker separado (fila BullMQ/Redis + FFmpeg: duração, metadados e thumbnail), **URL única** de 11 caracteres por vídeo, **streaming** com `206 Partial Content` e **download**.
+
+| Método & Rota | Descrição |
+|---------------|-----------|
+| `POST /videos` | Cria o rascunho e abre o upload multipart (autenticado) |
+| `POST /videos/:slug/upload-parts` | URLs pré-assinadas das partes (dono) |
+| `POST /videos/:slug/complete-upload` | Conclui o upload, confere o tamanho e enfileira o processamento (dono) |
+| `DELETE /videos/:slug/upload` | Aborta o upload e remove o rascunho (dono) |
+| `GET /videos/:slug/status` | Status `draft → processing → ready / failed` (dono) |
+| `GET /videos/:slug` | Vídeo pronto pela URL única (público) |
+| `GET /videos/:slug/stream` · `/download` · `/thumbnail` | `302` para URL pré-assinada do storage (público) |
+
+Artefatos do workflow: `docs/decisions/technical-decisions-phase-03-videos.md` (research) e `docs/phases/phase-03-videos/` (`context.md`, `validation.md`, `library-refs.md`, `phase-03-videos.md`, `progress.md`).
 
 ### Autenticação (Fase 02)
 
@@ -195,7 +217,7 @@ green-field-ia-project/
 |------|-----------|--------|
 | **01** | Configuração Base do Projeto | ✅ Concluída |
 | **02** | Cadastro, Login e Gerenciamento de Conta | ✅ Concluída |
-| **03** | Upload e Processamento de Vídeos | ⏳ Planejada |
+| **03** | Upload e Processamento de Vídeos | ✅ Concluída (backend) |
 | **04** | Gerenciamento de Vídeos e Canal | ⏳ Planejada |
 | **05** | Página de Visualização do Vídeo | ⏳ Planejada |
 | **06** | Interações Sociais (Likes, Comentários, Inscrições) | ⏳ Planejada |
