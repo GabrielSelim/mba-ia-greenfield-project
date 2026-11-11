@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/9 completed
+**SIs:** 4/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
 - **Status:** completed
@@ -30,9 +30,12 @@
   - `auth.service.integration-spec.ts` › 'does not revoke tokens from other users' exceeded the 5 s Jest timeout once while the dev host had load average 6.7 on 6 cores (Argon2 hashing); green on two re-runs. `video-worker` stopped until SI-03.7 to avoid its restart loop.
 
 ### SI-03.4 — Draft Pre-registration and Multipart Initiation (`POST /videos`)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** unit: video-slug.util.spec 2/2, videos.service.spec 9/9, videos.module.spec 1/1; integration: videos.service.integration-spec 2/2 (real DB + MinIO); e2e: test/videos.e2e-spec.ts POST /videos 5/5
+- **Observations:**
+  - **Library discrepancy (flagged per CLAUDE.md):** `@nestjs/bullmq@^12.0.1` is ESM-only and the project's CommonJS Jest cannot load it (`SyntaxError: Unexpected token 'export'`). Switched to `@nestjs/bullmq@^11.0.5` (CommonJS, NestJS 11, peer `bullmq ^6`) and added `ioredis@^5.11.1`, which BullMQ 6 made an optional peer. Recorded as a `Revisions:` entry in TD-01 and in `library-refs.md`; same decorators/APIs.
+  - `src/test/videos-test-module.ts` centralizes the testing module wired to real db/minio/redis plus a channel-owner factory, reused by the next SIs; the `video` config namespace is overridden there (5 MiB parts) to exercise multipart without large files.
+  - Draft multipart uploads created by the e2e/integration tests are aborted where the test owns the UploadId; drafts left by e2e stay as pending uploads in the dev bucket (no bytes).
 
 ### SI-03.5 — Upload Handshake: Sign Parts, Complete (enqueue) and Abort
 - **Status:** pending

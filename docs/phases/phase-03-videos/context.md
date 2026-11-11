@@ -52,7 +52,7 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | A (BullMQ + Redis) | bullmq@^6.7.4, @nestjs/bullmq@^12.0.1 |
+| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | A (BullMQ + Redis) | bullmq@^6.7.4, @nestjs/bullmq@^11.0.5, ioredis@^5.11.1 |
 | phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | Upload Protocol for Files up to 10GB | decided | C (S3 multipart with presigned part URLs) | @aws-sdk/client-s3@^3.1166.0, @aws-sdk/s3-request-presigner@^3.1166.0 |
 | phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Usage — SDK, Layout, Signing | decided | A (AWS SDK v3, one private bucket, per-video prefix, internal + public endpoint) | @aws-sdk/client-s3@^3.1166.0, @aws-sdk/s3-request-presigner@^3.1166.0 |
 | phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Repo-wide | Video Worker Runtime | decided | A (same codebase, separate entrypoint/container) | — |
@@ -89,7 +89,7 @@ _Source files:_
 
 **Recommendation:** BullMQ + Redis — native NestJS integration and built-in retry/backoff/deduplication cover the "process one heavy job reliably" need with the least custom code; the dual-write risk is handled by an idempotent consumer (see TD-09).
 **Decision:** A — queue `video-processing` on `redis:7.4.12-alpine` with `--maxmemory-policy noeviction`; producer in the API, consumer only in the worker.
-**Libraries:** `bullmq@^6.7.4`, `@nestjs/bullmq@^12.0.1`
+**Libraries:** `bullmq@^6.7.4`, `@nestjs/bullmq@^11.0.5, ioredis@^5.11.1`
 
 ### phase-03-videos/TD-02
 

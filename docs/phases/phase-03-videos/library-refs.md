@@ -5,9 +5,13 @@ libs:
     context7_id: "/taskforcesh/bullmq"
     fetched_at: "2026-11-11T13:58:40-04:00"
   "@nestjs/bullmq":
-    version: "^12.0.1"
+    version: "^11.0.5"
     context7_id: "/nestjs/docs.nestjs.com"
     fetched_at: "2026-11-11T13:58:40-04:00"
+  "ioredis":
+    version: "^5.11.1"
+    context7_id: "/taskforcesh/bullmq"
+    fetched_at: "2026-11-11T14:33:56-04:00"
   "@aws-sdk/client-s3":
     version: "^3.1166.0"
     context7_id: "/aws/aws-sdk-js-v3"
@@ -72,7 +76,9 @@ worker.on('failed', (job: Job, error: Error) => { /* job.attemptsMade, job.opts.
 
 ## @nestjs/bullmq
 
-**Version line:** `^12.0.1` — peer dependencies `bullmq ^3 || ^4 || ^5 || ^6`, `@nestjs/core`/`@nestjs/common ^10 || ^11 || ^12` (compatible with the installed `11.1.16`).
+**Version line:** `^11.0.5` — peer dependencies `bullmq ^3 || ^4 || ^5 || ^6`, `@nestjs/core`/`@nestjs/common ^10 || ^11`.
+
+> **Discrepancy flagged during SI-03.4 (2026-11-11):** the first pin was `^12.0.1` (latest, peer range includes Nest 11), but 12.x ships **ESM only** (`dist/index.js` starts with `export { getQueueToken, JOB_REF } from '@nestjs/bull-shared'`). Node 25 can `require()` it at runtime, but the project's Jest (CommonJS, `ts-jest`) fails with `SyntaxError: Unexpected token 'export'`. The 11.x line is CommonJS and matches the installed NestJS 11 — see TD-01 `Revisions`. The API surface used here (`forRootAsync`, `registerQueue`, `@InjectQueue`, `@Processor`, `WorkerHost`, `@OnWorkerEvent`) is the same in both lines.
 **Decided in:** `phase-03-videos/TD-01`, `phase-03-videos/TD-04`.
 **Context7 ID:** `/nestjs/docs.nestjs.com` (page `content/application/queues.md`).
 
@@ -119,6 +125,15 @@ export class AudioConsumer extends WorkerHost {
 ```
 
 Project adaptation: the processor class is registered only in the worker's module tree (TD-04), so the API process never instantiates a BullMQ `Worker`.
+
+---
+
+## ioredis
+
+**Version line:** `^5.11.1` (bullmq 6 peer: `ioredis >=5.0.0`, optional).
+**Decided in:** `phase-03-videos/TD-01` (Revisions).
+**Context7 excerpt (`/taskforcesh/bullmq`):** "Creates a new Redis connection for each Queue and Worker instance using ioredis options. If no options are provided, defaults to port 6379 and localhost." — `new Queue('myqueue', { connection: { host, port } })`.
+**Why explicit:** BullMQ 6 no longer bundles a Redis client — without it the queue fails at runtime with `BullMQ could not load the optional 'ioredis' package. Install it with npm install ioredis, or provide a different Redis client instance`. The project passes plain `connection: { host, port }` options, which BullMQ turns into an `ioredis` client.
 
 ---
 

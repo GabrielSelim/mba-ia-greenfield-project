@@ -25,7 +25,7 @@ Deliver video upload of files up to 10 GiB straight to object storage (S3 multip
 
 **Technical actions:**
 
-- Install production dependencies: `bullmq@^6.7.4`, `@nestjs/bullmq@^12.0.1`, `@aws-sdk/client-s3@^3.1166.0`, `@aws-sdk/s3-request-presigner@^3.1166.0` (versions from `library-refs.md`)
+- Install production dependencies: `bullmq@^6.7.4`, `@nestjs/bullmq@^11.0.5` (revised from `^12.0.1` — ESM-only, see TD-01 Revisions), `ioredis@^5.11.1`, `@aws-sdk/client-s3@^3.1166.0`, `@aws-sdk/s3-request-presigner@^3.1166.0` (versions from `library-refs.md`)
 - `Dockerfile.dev`: add `ffmpeg` to the `apt install` line (provides `ffmpeg` and `ffprobe`)
 - `compose.yaml`:
   - `redis` — `redis:7.4.12-alpine`, command `redis-server --appendonly yes --maxmemory-policy noeviction`, healthcheck `redis-cli ping`, volume `redis-data`

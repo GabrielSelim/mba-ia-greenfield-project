@@ -48,6 +48,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Libraries:** `bullmq`, `@nestjs/bullmq`
 
+**Revisions:**
+- 2026-11-11 — `@nestjs/bullmq` pinned to `^11.0.5` (not `^12.0.1`) and `ioredis@^5.11.1` added. Rationale: during SI-03.4, `@nestjs/bullmq@12` turned out to be ESM-only (`export { getQueueToken … }` in `dist/index.js`), which the CommonJS Jest runtime of the project cannot load; the 11.x line is CommonJS, targets the installed NestJS 11 and declares `bullmq ^6.0.0` as peer since 11.0.5. BullMQ 6 made `ioredis` an optional peer (`BullMQ could not load the optional 'ioredis' package`), so it is now an explicit dependency.
+
 ---
 
 ## TD-02: Upload Protocol for Files up to 10GB
