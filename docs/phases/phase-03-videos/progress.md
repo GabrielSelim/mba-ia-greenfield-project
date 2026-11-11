@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/9 completed
+**SIs:** 6/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
 - **Status:** completed
@@ -46,9 +46,12 @@
   - Jobs enqueued by tests whose rows are cleaned afterwards are left in Redis; the idempotent consumer (SI-03.6) skips them.
 
 ### SI-03.6 — Video Processing: FFprobe Metadata, Thumbnail and Failure Handling
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 33/33 passing — unit: media-tools.service.spec 9, video-processing.service.spec 10, video-processing.processor.spec 8; integration: media-tools.service.integration-spec 3 (real ffprobe/ffmpeg over a presigned MinIO URL), video-processing.service.integration-spec 3 (ready with duration/metadata/thumbnail; idempotent re-run; non-video → failed)
+- **Observations:**
+  - Test media are generated at test time by `src/test/test-media.ts` (`ffmpeg -f lavfi testsrc2 + sine`, libx264/aac) — no binary fixtures. 3 s at 320×240 ≈ 190 KB; 3 s at 1280×720 / 30 Mbps ≈ 12.8 MB (used by the SI-03.8 e2e for 3 parts of 5 MiB).
+  - `MediaToolException.invalidInput` classifies ffprobe stderr (`Invalid data found when processing input`, `moov atom not found`, …) as permanent → `InvalidVideoMediaException` → `UnrecoverableError`; any other tool failure (timeouts, connection errors) is retried by BullMQ.
+  - The integration test wires `VideoProcessingService` + `MediaToolsService` without `VideoProcessingModule`, so no BullMQ worker is started inside Jest (it would consume the shared queue); `createVideosTestingModule` gained an optional `providers` argument.
 
 ### SI-03.7 — Worker Entrypoint and Container
 - **Status:** pending

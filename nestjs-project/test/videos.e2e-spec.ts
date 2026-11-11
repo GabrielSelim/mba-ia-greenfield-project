@@ -182,7 +182,7 @@ describe('Videos (e2e)', () => {
       const signed = await signParts(ownerToken, draft.slug, [1]);
       expect(signed.status).toBe(200);
       expect(signed.body.expires_in).toBe(3600);
-      const put = await fetch(signed.body.parts[0].url, {
+      const put = await fetch(signed.body.parts[0].url as string, {
         method: 'PUT',
         body: new Uint8Array(body),
       });

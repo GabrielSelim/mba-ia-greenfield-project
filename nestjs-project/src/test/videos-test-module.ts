@@ -1,4 +1,4 @@
-import { DynamicModule, Type } from '@nestjs/common';
+import { DynamicModule, Provider, Type } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -31,6 +31,7 @@ export const VIDEO_TEST_ENTITIES = [
 export async function createVideosTestingModule(
   imports: Array<Type<unknown> | DynamicModule>,
   overrides: Partial<ReturnType<typeof videoConfig>> = {},
+  providers: Provider[] = [],
 ): Promise<TestingModule> {
   const builder = Test.createTestingModule({
     imports: [
@@ -42,6 +43,7 @@ export async function createVideosTestingModule(
       QueueModule,
       ...imports,
     ],
+    providers,
   });
   if (Object.keys(overrides).length > 0) {
     builder
