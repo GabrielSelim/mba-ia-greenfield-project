@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-11-11
 scope_description: "Backend foundation for video upload and processing: queue technology, 10GB upload protocol, object storage usage, video worker runtime, FFmpeg integration, thumbnail, unique URL, streaming/download delivery, status lifecycle and upload limits."
 ---
@@ -44,7 +44,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option A (BullMQ + Redis) — native NestJS integration and built-in retry/backoff/deduplication cover exactly the "process one heavy job reliably" need of this phase with the least custom code; the dual-write risk is handled by an idempotent consumer (see TD-09).
 
-**Decision:** _[pending]_
+**Decision:** A (BullMQ + Redis) — queue `video-processing` on `redis:7.4.12-alpine` started with `--maxmemory-policy noeviction`; producer in the API via `@nestjs/bullmq`, consumer only in the worker (TD-04).
+
+**Libraries:** `bullmq`, `@nestjs/bullmq`
 
 ---
 
@@ -80,7 +82,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option C (S3 multipart with presigned part URLs) — the only option that both keeps every video byte off the API and meets the 10GB target within S3 limits, with part-level retry; the handshake cost is a few small JSON requests.
 
-**Decision:** _[pending]_
+**Decision:** C (S3 multipart with presigned part URLs) — handshake `POST /videos` (draft + `CreateMultipartUpload`) → `POST /videos/{slug}/upload-parts` (presigned `UploadPart` URLs, batches of up to 100) → `POST /videos/{slug}/complete-upload` (`CompleteMultipartUpload` + `HeadObject` + enqueue); `DELETE /videos/{slug}/upload` aborts (`AbortMultipartUpload` + draft removed). Resolves ICC-1: `VideosController` overrides the inherited global throttler with `@Throttle({ default: { limit: 120, ttl: 60000 } })`; auth routes keep 10/min.
+
+**Libraries:** `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`
 
 ---
 
@@ -109,9 +113,13 @@ Stack constraints read before researching (installed versions in `nestjs-project
 - **Pros:** cacheable stable thumbnail URLs.
 - **Cons:** two bucket policies/CORS configs; a public bucket is a security decision this phase does not need (Phase 04 handles visibility); thumbnails of unpublished videos become guessable.
 
+**Local MinIO image (finding during research, 2026-11-11):** the official images are no longer pullable — `docker pull minio/minio:RELEASE.2025-04-22T22-12-26Z` returns `pull access denied … repository does not exist`, and `quay.io/minio/minio` returns `unauthorized` (MinIO stopped distributing community images). Candidates checked on the dev host: `bitnamilegacy/minio:2025.4.22` (frozen since 2025-05, no security updates) and `cgr.dev/chainguard/minio` (Chainguard-maintained build, rebuilt daily — `RELEASE.2026-11-10T21-18-11Z` at the time of the check; distroless, runs as UID 65532, needs a named volume for `/data`). Use the Chainguard image **pinned by digest** for reproducibility, and create the bucket with a one-shot `amazon/aws-cli` service (`aws s3 mb`), since the image ships no `mc` client. Storage stays S3-API-only, so swapping the image (or using AWS S3) does not touch application code.
+
 **Recommendation:** Option A — AWS SDK v3 with one private bucket and per-video key prefixes, so local and production use exactly the same code path and every access stays behind short-lived signatures.
 
-**Decision:** _[pending]_
+**Decision:** A (AWS SDK v3, one private bucket, per-video prefix) — bucket `S3_BUCKET` (`streamtube-videos` locally), keys `videos/{videoId}/original` and `videos/{videoId}/thumbnail.jpg`; MinIO `cgr.dev/chainguard/minio` pinned by digest + one-shot `amazon/aws-cli` bucket bootstrap. Resolves IC-2: two clients — `S3_ENDPOINT=http://minio:9000` (service-to-service, follows the service-name rule) and `S3_PUBLIC_ENDPOINT=http://minio.localhost:9000` used **only to sign client-facing URLs**; Compose gives the `minio` service the network alias `minio.localhost`, so the same signed URL works from the host (browsers/curl resolve `*.localhost` to loopback, port 9000 published) and from containers running tests. Resolves IC-1: tests run against the real MinIO service (no filesystem adapter); the testing-guide reference is revised accordingly.
+
+**Libraries:** `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`
 
 ---
 
@@ -142,7 +150,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option A — the worker is a separate container (as the diagram requires) without duplicating the domain code; it is the lowest-cost way to keep FFmpeg out of the API process.
 
-**Decision:** _[pending]_
+**Decision:** A (same codebase, separate entrypoint and container) — `src/worker.ts` + `WorkerModule`; Compose service `video-worker` from `Dockerfile.dev` (now with `ffmpeg`).
+
+**Libraries:** —
 
 ---
 
@@ -173,7 +183,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option B — spawning the binaries avoids a deprecated wrapper, and reading through a presigned URL lets the worker handle 10GB sources without local disk.
 
-**Decision:** _[pending]_
+**Decision:** B (spawn `ffprobe`/`ffmpeg` over a presigned URL) — URL signed with the internal endpoint; per-command timeout; ffprobe JSON parsed into `duration_seconds` + `metadata`.
+
+**Libraries:** — (system `ffmpeg`/`ffprobe` from Debian packages in the image)
 
 ---
 
@@ -202,7 +214,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option B — deterministic and cheap, and avoids the common black first frame; scene analysis is not worth decoding many frames of a 10GB file.
 
-**Decision:** _[pending]_
+**Decision:** B (10% offset capped at 10s, JPEG width 1280).
+
+**Libraries:** —
 
 ---
 
@@ -231,7 +245,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option B — short, non-enumerable and stable across title edits; uniqueness is enforced by the database, not by probability alone.
 
-**Decision:** _[pending]_
+**Decision:** B (11-char base64url random slug + unique index + retry).
+
+**Libraries:** —
 
 ---
 
@@ -261,7 +277,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option B — progressive streaming with Range served by the storage through presigned redirects satisfies streaming and download without moving bytes through the API; HLS is out of the phase's scope.
 
-**Decision:** _[pending]_
+**Decision:** B (302 to presigned storage URL) — `GET /videos/{slug}/stream` (inline, `Content-Type` of the upload), `GET /videos/{slug}/download` (`attachment; filename=`), `GET /videos/{slug}/thumbnail`; presigned GET TTL from config.
+
+**Libraries:** `@aws-sdk/s3-request-presigner`
 
 ---
 
@@ -290,7 +308,9 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option A — the minimal state set that reflects what the system can actually observe, with explicit terminal failure and an idempotent at-least-once consumer.
 
-**Decision:** _[pending]_
+**Decision:** A (draft → processing → ready | failed) — BullMQ `attempts: 3`, `backoff: { type: exponential, delay: 5000 }`, `jobId = videoId`; worker marks `failed` on the last attempt or immediately on `UnrecoverableError` (no video stream / object missing).
+
+**Libraries:** —
 
 ---
 
@@ -315,7 +335,40 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 **Recommendation:** Option A — enforce the 10 GiB contract at three points with S3-compatible part sizing, keeping values in config so tests can use small parts.
 
-**Decision:** _[pending]_
+**Decision:** A — limit is binary: **10 GiB = 10,737,418,240 bytes** (resolves AMB-1; a "10GB" file in user terms always fits); part size 100 MiB; MIME allowlist `video/mp4`, `video/webm`, `video/quicktime`, `video/x-matroska`; size re-checked with `HeadObject`.
+
+**Libraries:** —
+
+---
+
+## TD-11: Read Access Policy for Videos (metadata, stream, download, thumbnail)
+
+**Scope:** Cross-layer
+
+**Capability:** Transversal — covers: Reprodução via streaming (sem necessidade de download completo); Download do vídeo pelo usuário
+
+**Context:** Added after `plan-validate` raised `MD-1`: TD-08 decides how bytes are delivered, but not who may read them. Boundaries: Phase 04 introduces visibility (público / unlisted) and the draft → publication flow; Phase 05 introduces the watch page and "acesso anônimo à visualização". Phase 03 has no listing endpoint, so a video can only be reached by its unique URL (TD-07).
+
+**Options:**
+
+### Option A: Ready videos readable by anyone holding the unique URL; everything else owner-only
+- `GET /videos/{slug}`, `/stream`, `/download`, `/thumbnail` are `@Public()` and answer only for `status = ready`; for draft/processing/failed (or unknown slug) they return `404 VIDEO_NOT_FOUND` (existence is not leaked). The owner follows its upload through an authenticated status endpoint that returns any status.
+- **Pros:** "link-only" semantics equal to a future `unlisted` video — Phase 04 only adds a visibility filter on top, without changing the URLs; matches the diagram (anonymous user watches); the unguessable 64-bit slug is the capability.
+- **Cons:** until Phase 04, every ready video is reachable by whoever has the link (no private mode).
+
+### Option B: Owner-only reads in Phase 03
+- **Pros:** most restrictive.
+- **Cons:** "Download do vídeo pelo usuário" and streaming become owner-only features; Phase 05 would have to re-open the endpoints' authorization; anonymous playback (diagram) unproven until later.
+
+### Option C: Any authenticated user
+- **Pros:** limits scraping to registered accounts.
+- **Cons:** contradicts the product rule "Anonymous users can watch freely" (`CLAUDE.md` overview) and would be reverted in Phase 05.
+
+**Recommendation:** Option A — link-only public read of ready videos is the product rule from the overview, needs no change in later phases, and hides non-ready videos behind 404.
+
+**Decision:** A (ready videos public by unique URL; others 404 for non-owners) — owner follows status at `GET /videos/{slug}/status` (authenticated).
+
+**Libraries:** —
 
 ---
 
@@ -323,13 +376,14 @@ Stack constraints read before researching (installed versions in `nestjs-project
 
 | ID | Scope | Decision | Recommendation | Choice |
 |----|-------|----------|---------------|--------|
-| TD-01 | Backend | Message queue technology | A (BullMQ + Redis) | _[pending]_ |
-| TD-02 | Cross-layer | Upload protocol for files up to 10GB | C (S3 multipart with presigned part URLs) | _[pending]_ |
-| TD-03 | Backend | Object storage usage (SDK, layout, signing) | A (AWS SDK v3, one private bucket, per-video prefix) | _[pending]_ |
-| TD-04 | Repo-wide | Video worker runtime | A (same codebase, separate entrypoint/container) | _[pending]_ |
-| TD-05 | Backend | FFmpeg integration and source access | B (spawn ffprobe/ffmpeg over presigned URL) | _[pending]_ |
-| TD-06 | Backend | Thumbnail generation strategy | B (10% offset, JPEG 1280px) | _[pending]_ |
-| TD-07 | Cross-layer | Unique video URL identifier | B (11-char base64url random slug + unique index) | _[pending]_ |
-| TD-08 | Cross-layer | Streaming and download delivery | B (302 to presigned storage URL, Range/206 by storage) | _[pending]_ |
-| TD-09 | Backend | Video status lifecycle and failure handling | A (draft → processing → ready/failed, retries, idempotent) | _[pending]_ |
-| TD-10 | Backend | Upload limits and accepted formats | A (10 GiB, 100 MiB parts, MIME allowlist, size check) | _[pending]_ |
+| TD-01 | Backend | Message queue technology | A (BullMQ + Redis) | A |
+| TD-02 | Cross-layer | Upload protocol for files up to 10GB | C (S3 multipart with presigned part URLs) | C |
+| TD-03 | Backend | Object storage usage (SDK, layout, signing) | A (AWS SDK v3, one private bucket, per-video prefix) | A |
+| TD-04 | Repo-wide | Video worker runtime | A (same codebase, separate entrypoint/container) | A |
+| TD-05 | Backend | FFmpeg integration and source access | B (spawn ffprobe/ffmpeg over presigned URL) | B |
+| TD-06 | Backend | Thumbnail generation strategy | B (10% offset, JPEG 1280px) | B |
+| TD-07 | Cross-layer | Unique video URL identifier | B (11-char base64url random slug + unique index) | B |
+| TD-08 | Cross-layer | Streaming and download delivery | B (302 to presigned storage URL, Range/206 by storage) | B |
+| TD-09 | Backend | Video status lifecycle and failure handling | A (draft → processing → ready/failed, retries, idempotent) | A |
+| TD-10 | Backend | Upload limits and accepted formats | A (10 GiB, 100 MiB parts, MIME allowlist, size check) | A |
+| TD-11 | Cross-layer | Read access policy for videos | A (ready videos public by unique URL; others owner-only/404) | A |
