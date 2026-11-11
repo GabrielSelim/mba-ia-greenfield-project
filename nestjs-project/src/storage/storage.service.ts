@@ -166,7 +166,22 @@ export class StorageService implements OnModuleDestroy {
     }
   }
 
+  /** Idempotent: an upload that no longer exists is already aborted. */
   async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    try {
+      await this.sendAbort(key, uploadId);
+    } catch (error) {
+      if (
+        error instanceof S3ServiceException &&
+        error.name === 'NoSuchUpload'
+      ) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private async sendAbort(key: string, uploadId: string): Promise<void> {
     await this.internalClient.send(
       new AbortMultipartUploadCommand({
         Bucket: this.bucket,

@@ -39,3 +39,22 @@ export class VideoDraftResponseDto extends VideoSummaryDto {
   @ApiProperty({ type: UploadInstructionsDto })
   upload: UploadInstructionsDto;
 }
+
+export class SignedUploadPartDto {
+  @ApiProperty()
+  part_number: number;
+
+  @ApiProperty({
+    description:
+      'Presigned PUT URL on the object storage — send the raw part bytes and keep the ETag response header',
+  })
+  url: string;
+}
+
+export class SignedUploadPartsDto {
+  @ApiProperty({ type: [SignedUploadPartDto] })
+  parts: SignedUploadPartDto[];
+
+  @ApiProperty({ description: 'Seconds until the URLs expire' })
+  expires_in: number;
+}

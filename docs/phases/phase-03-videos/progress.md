@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/9 completed
+**SIs:** 5/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
 - **Status:** completed
@@ -38,9 +38,12 @@
   - Draft multipart uploads created by the e2e/integration tests are aborted where the test owns the UploadId; drafts left by e2e stay as pending uploads in the dev bucket (no bytes).
 
 ### SI-03.5 — Upload Handshake: Sign Parts, Complete (enqueue) and Abort
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** unit: videos.service.spec 23/23 (9 createDraft + 14 handshake); integration: videos.service.integration-spec 7/7 (2-part upload via presigned URLs → processing + job by id; size mismatch → failed + object removed; wrong ETag → UploadIncomplete; abort invalidates part URLs; foreign slug → 404), storage.service.integration-spec 6/6 (abort now idempotent); e2e: videos.e2e-spec 11/11
+- **Observations:**
+  - `StorageService.abortMultipartUpload` made idempotent (`NoSuchUpload` = already aborted) so aborting a draft whose upload expired on the storage does not 500.
+  - Publisher test asserts the job with `queue.getJob(videoId)` (deterministic id) rather than `getJobs(['waiting'])`, as revised in the testing guide — the `video-worker` container consumes the queue concurrently once SI-03.7 is in.
+  - Jobs enqueued by tests whose rows are cleaned afterwards are left in Redis; the idempotent consumer (SI-03.6) skips them.
 
 ### SI-03.6 — Video Processing: FFprobe Metadata, Thumbnail and Failure Handling
 - **Status:** pending

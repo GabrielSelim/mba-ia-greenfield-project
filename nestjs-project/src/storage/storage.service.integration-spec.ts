@@ -96,6 +96,10 @@ describe('StorageService (integration)', () => {
     const url = await storage.presignUploadPart(key, uploadId, 1, URL_TTL);
 
     await storage.abortMultipartUpload(key, uploadId);
+    // Idempotent: aborting again is a no-op (NoSuchUpload swallowed).
+    await expect(
+      storage.abortMultipartUpload(key, uploadId),
+    ).resolves.toBeUndefined();
 
     const res = await fetch(url, {
       method: 'PUT',
