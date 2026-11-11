@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/9 completed
+**SIs:** 3/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
 - **Status:** completed
@@ -21,9 +21,13 @@
   - Node 25 `fetch` typings reject `Buffer` bodies in `tsc`; tests wrap them in `Uint8Array`.
 
 ### SI-03.3 — Video Entity, Migration and Channel Lookup
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** full unit+integration run: 161/162 then the single timeout re-run green (25/25 twice); SI files: video.entity.integration-spec.ts 6/6, migrations.integration-spec.ts 2/2, channels.service.integration-spec.ts 5/5 (2 new for findByUserId)
+- **Observations:**
+  - Migration `1794421231714-CreateVideos.ts` generated with `npm run migration:generate` against the migrated dev DB (rule `typeorm-migrations.md`), then formatted with Prettier.
+  - **Needed earlier than planned:** adding the inverse `Channel.videos` relation makes `AppModule` fail to boot unless `Video` is registered in some `TypeOrmModule.forFeature` (`openapi-export.integration-spec.ts` hit `process.exit(1)`). A minimal `VideosModule` (only `forFeature([Video])`) was created here and registered in `AppModule`; SI-03.4 grows it.
+  - All existing integration/module specs with explicit entity arrays now include `Video` (TypeORM needs every entity of a relation graph).
+  - `auth.service.integration-spec.ts` › 'does not revoke tokens from other users' exceeded the 5 s Jest timeout once while the dev host had load average 6.7 on 6 cores (Argon2 hashing); green on two re-runs. `video-worker` stopped until SI-03.7 to avoid its restart loop.
 
 ### SI-03.4 — Draft Pre-registration and Multipart Initiation (`POST /videos`)
 - **Status:** pending
