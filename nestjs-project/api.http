@@ -118,3 +118,74 @@ Content-Type: {{contentType}}
   "token": "{{resetToken}}",
   "new_password": "new-password123"
 }
+
+
+###
+# ─────────────────────────────────────────────
+# VÍDEOS (Fase 03) — upload multipart direto no storage
+# O arquivo NUNCA passa pela API: a API só cria o rascunho, assina as URLs
+# das partes e conclui o upload. Cada parte é enviada com PUT direto para a
+# URL presignada (MinIO em http://minio.localhost:9000).
+# ─────────────────────────────────────────────
+
+@videoSlug = {{createVideo.response.body.$.slug}}
+
+### 10. Iniciar upload — cria o rascunho e abre o multipart (requer login)
+# @name createVideo
+POST {{baseUrl}}/videos
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "filename": "meu-video.mp4",
+  "content_type": "video/mp4",
+  "size_bytes": 1048576
+}
+
+
+### 11. URLs presignadas das partes (até 100 por chamada)
+# Envie cada parte com: curl -X PUT --upload-file parte-N "<url>" e guarde o header ETag
+# @name uploadParts
+POST {{baseUrl}}/videos/{{videoSlug}}/upload-parts
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "part_numbers": [1]
+}
+
+
+### 12. Concluir upload — status vira "processing" e o job vai para a fila
+POST {{baseUrl}}/videos/{{videoSlug}}/complete-upload
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "parts": [{ "part_number": 1, "etag": "<ETag retornado pelo PUT da parte 1>" }]
+}
+
+
+### 13. Acompanhar o processamento (dono): draft → processing → ready | failed
+GET {{baseUrl}}/videos/{{videoSlug}}/status
+Authorization: Bearer {{accessToken}}
+
+
+### 14. Abortar um upload em andamento (remove o rascunho)
+DELETE {{baseUrl}}/videos/{{videoSlug}}/upload
+Authorization: Bearer {{accessToken}}
+
+
+### 15. Vídeo pela URL única (público — só vídeos "ready")
+GET {{baseUrl}}/videos/{{videoSlug}}
+
+
+### 16. Streaming — 302 para URL do storage que aceita Range (206 Partial Content)
+GET {{baseUrl}}/videos/{{videoSlug}}/stream
+
+
+### 17. Download — 302 para URL com Content-Disposition: attachment
+GET {{baseUrl}}/videos/{{videoSlug}}/download
+
+
+### 18. Thumbnail — 302 para o JPEG gerado a partir de um frame
+GET {{baseUrl}}/videos/{{videoSlug}}/thumbnail

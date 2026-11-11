@@ -1,9 +1,11 @@
 FROM node:25.6.0-slim
 
-RUN apt update && apt install -y procps curl
+# ffmpeg provides ffmpeg/ffprobe for the video worker (and for tests that
+# generate sample media) — technical-decisions-phase-03-videos TD-05.
+RUN apt update && apt install -y procps curl ffmpeg
 
 WORKDIR /home/node/app
 
 USER node
 
-CMD [ "tail", "-f", "/dev/null" ] 
+CMD [ "tail", "-f", "/dev/null" ]

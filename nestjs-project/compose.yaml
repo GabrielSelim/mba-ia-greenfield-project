@@ -1,6 +1,6 @@
 services:
   nestjs-api:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.dev
     ports:
@@ -12,6 +12,33 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  # Consumes the `video-processing` queue (BullMQ) and runs ffprobe/ffmpeg.
+  # Same image and bind mount as the API. Waits until `npm install`/`npm ci`
+  # has *finished* (npm writes node_modules/.package-lock.json at the end) —
+  # starting while packages are still being written fails with MODULE_NOT_FOUND.
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command:
+      - sh
+      - -c
+      - until [ -f node_modules/.package-lock.json ] && [ -d node_modules/@nestjs/bullmq ]; do echo "video-worker waiting for npm install"; sleep 5; done; exec npm run start:worker:dev
+    volumes:
+      - .:/home/node/app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
   db:
     image: postgres:17
@@ -33,4 +60,58 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # Queue broker for BullMQ. `noeviction` is required by BullMQ; AOF keeps
+  # queued jobs across restarts.
+  redis:
+    image: redis:7.4.12-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  # S3-compatible object storage (videos and thumbnails). The official
+  # minio/minio images are no longer published; this is Chainguard's
+  # maintained build, pinned by digest (technical-decisions-phase-03-videos TD-03).
+  # The `minio.localhost` alias lets containers reach the same host name that
+  # client-facing presigned URLs are signed for (S3_PUBLIC_ENDPOINT); browsers
+  # and curl on the host resolve *.localhost to 127.0.0.1.
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:db3f583fa49121942168bd6383a773b2cde3384c9a99bf7193560b9a0f3a28fd
+    command: ["server", "/data"]
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY:?S3_ACCESS_KEY must be set in .env}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY:?S3_SECRET_KEY must be set in .env}
+    ports:
+      - "9000:9000"
+    volumes:
+      - minio-data:/data
+    networks:
+      default:
+        aliases:
+          - minio.localhost
+
+  # One-shot bucket bootstrap (the MinIO image ships no `mc` client).
+  minio-init:
+    image: amazon/aws-cli:2.27.50
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY}
+      - AWS_DEFAULT_REGION=${S3_REGION:-us-east-1}
+      - S3_BUCKET=${S3_BUCKET:-streamtube-videos}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until aws --endpoint-url http://minio:9000 s3api list-buckets > /dev/null 2>&1; do echo "waiting for minio"; sleep 1; done
+        aws --endpoint-url http://minio:9000 s3api head-bucket --bucket "$$S3_BUCKET" 2> /dev/null || aws --endpoint-url http://minio:9000 s3 mb "s3://$$S3_BUCKET"
+        echo "bucket $$S3_BUCKET ready"
+
+volumes:
+  minio-data:
+  redis-data:

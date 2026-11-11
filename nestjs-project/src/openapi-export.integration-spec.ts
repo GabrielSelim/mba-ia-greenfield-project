@@ -110,6 +110,70 @@ describe('exportSpec (integration)', () => {
     }
   });
 
+  describe('videos (phase 03)', () => {
+    const videoOperations: Array<{
+      path: string;
+      method: string;
+      protected: boolean;
+    }> = [
+      { path: '/videos', method: 'post', protected: true },
+      { path: '/videos/{slug}/upload-parts', method: 'post', protected: true },
+      {
+        path: '/videos/{slug}/complete-upload',
+        method: 'post',
+        protected: true,
+      },
+      { path: '/videos/{slug}/upload', method: 'delete', protected: true },
+      { path: '/videos/{slug}/status', method: 'get', protected: true },
+      { path: '/videos/{slug}', method: 'get', protected: false },
+      { path: '/videos/{slug}/stream', method: 'get', protected: false },
+      { path: '/videos/{slug}/download', method: 'get', protected: false },
+      { path: '/videos/{slug}/thumbnail', method: 'get', protected: false },
+    ];
+
+    it('exports the 9 video operations with a summary', () => {
+      const paths = document.paths as Record<
+        string,
+        Record<string, Record<string, unknown>>
+      >;
+
+      for (const { path, method } of videoOperations) {
+        const operation = paths[path]?.[method];
+        expect(operation).toBeDefined();
+        expect((operation.summary as string).length).toBeGreaterThan(0);
+        expect(operation.tags).toEqual(['videos']);
+      }
+    });
+
+    it('declares bearer security only on owner routes', () => {
+      const paths = document.paths as Record<
+        string,
+        Record<string, Record<string, unknown>>
+      >;
+
+      for (const { path, method, protected: isProtected } of videoOperations) {
+        const security = paths[path][method].security as
+          | Array<Record<string, unknown>>
+          | undefined;
+        const hasBearer = !!security?.some((req) => 'access-token' in req);
+        expect({ path, method, hasBearer }).toEqual({
+          path,
+          method,
+          hasBearer: isProtected,
+        });
+      }
+    });
+
+    it('documents the 302 redirect of the stream route', () => {
+      const paths = document.paths as Record<
+        string,
+        Record<string, Record<string, Record<string, unknown>>>
+      >;
+
+      expect(paths['/videos/{slug}/stream'].get.responses['302']).toBeDefined();
+    });
+  });
+
   it('all auth endpoints have a non-empty summary', () => {
     const paths = document.paths as Record<
       string,
