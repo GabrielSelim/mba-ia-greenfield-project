@@ -18,7 +18,9 @@ services:
         condition: service_completed_successfully
 
   # Consumes the `video-processing` queue (BullMQ) and runs ffprobe/ffmpeg.
-  # Same image and bind mount as the API; waits until `npm install` has run.
+  # Same image and bind mount as the API. Waits until `npm install`/`npm ci`
+  # has *finished* (npm writes node_modules/.package-lock.json at the end) —
+  # starting while packages are still being written fails with MODULE_NOT_FOUND.
   video-worker:
     build:
       context: .
@@ -26,7 +28,7 @@ services:
     command:
       - sh
       - -c
-      - until [ -d node_modules/@nestjs/bullmq ]; do echo "video-worker waiting for npm install"; sleep 5; done; exec npm run start:worker:dev
+      - until [ -f node_modules/.package-lock.json ] && [ -d node_modules/@nestjs/bullmq ]; do echo "video-worker waiting for npm install"; sleep 5; done; exec npm run start:worker:dev
     volumes:
       - .:/home/node/app
     restart: unless-stopped

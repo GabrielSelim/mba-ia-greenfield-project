@@ -60,6 +60,7 @@
   - **Fixed during the SI:** first boot of the worker failed with `Entity metadata for Video#channel was not found` — `autoLoadEntities` only knew `Video`. `VideoProcessingModule` now imports `UsersModule` (which imports `ChannelsModule`), registering the `Video → Channel → User` graph through the owning modules.
   - Right after boot the worker consumed the jobs left in Redis by the SI-03.5 tests and logged `Skipping video …: not found` for each — the idempotent-consumer behaviour of TD-09 observed live.
   - `start:worker:dev` runs `node --watch -r ts-node/register src/worker.ts` with `TS_NODE_TRANSPILE_ONLY=true` (no `dist/` sharing with the API's `nest start --watch`, which deletes `dist` on start); `node --watch` restarted the worker automatically when the module file changed.
+  - **Found during the final DoD run on a fresh environment (2026-11-11):** with `node_modules` absent, the worker started as soon as `node_modules/@nestjs/bullmq` appeared while `npm ci` was still writing other packages, failed with `MODULE_NOT_FOUND`, and `node --watch` then waited for file changes forever. The Compose command now waits for `node_modules/.package-lock.json` (written by npm when the install finishes). Re-verified from scratch (`down -v`, `rm -rf node_modules`, `up`, `npm ci`): the worker logged `waiting for npm install` twice, no `MODULE_NOT_FOUND`, then `Video worker ready`.
 
 ### SI-03.8 — Read Endpoints: Video, Owner Status, Stream, Download and Thumbnail
 - **Status:** completed
