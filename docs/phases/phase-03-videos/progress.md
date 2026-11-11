@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/9 completed
+**SIs:** 2/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
 - **Status:** completed
@@ -13,9 +13,12 @@
   - Prettier applied with `npx prettier --write` inside the container (the Windows checkout uses CRLF; the repository stores LF).
 
 ### SI-03.2 — Storage Module (S3 API over MinIO)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 7/7 passing (storage.service.integration-spec.ts: 6, storage.module.spec.ts: 1)
+- **Observations:**
+  - Presigned part URLs signed for `S3_PUBLIC_ENDPOINT` (`minio.localhost:9000`) were PUT from inside the `nestjs-api` container through the network alias — confirms the IC-2 resolution in practice.
+  - `requestChecksumCalculation/responseChecksumValidation: 'WHEN_REQUIRED'` set on both clients as documented in `library-refs.md`; with it, browser-style PUTs to presigned part URLs succeed (no `x-amz-checksum-*` requirement).
+  - Node 25 `fetch` typings reject `Buffer` bodies in `tsc`; tests wrap them in `Uint8Array`.
 
 ### SI-03.3 — Video Entity, Migration and Channel Lookup
 - **Status:** pending
