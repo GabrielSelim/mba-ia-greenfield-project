@@ -19,12 +19,14 @@ This is a monorepo with two main areas:
 See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 
 - **Frontend** (Next.js) → calls API via REST, streams from Object Storage
-- **API** (Nest.js) → business rules, auth, reads/writes DB, uploads to storage, publishes jobs to queue, sends emails
+- **API** (Nest.js) → business rules, auth, reads/writes DB, opens multipart uploads and signs storage URLs, publishes jobs to queue, sends emails
 - **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
-- **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Object Storage** (S3 API — MinIO locally, S3 in production) → video files and thumbnails
+- **Message Queue** (BullMQ on Redis) → video processing job queue
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+Since Phase 03 the queue, the object storage and the worker run in `nestjs-project/compose.yaml` (`redis`, `minio` + `minio-init`, `video-worker`). Video bytes never go through the API: clients upload parts straight to the storage with presigned URLs, and stream/download through `302` redirects to presigned URLs. Details (endpoints, statuses, commands) in `nestjs-project/CLAUDE.md` → "Videos (Phase 03)"; decisions in `docs/decisions/technical-decisions-phase-03-videos.md`.
 
 ## Docker Networking
 

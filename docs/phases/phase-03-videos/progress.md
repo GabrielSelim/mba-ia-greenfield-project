@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/9 completed
+**SIs:** 9/9 completed
 
 ### SI-03.1 — Infrastructure: Compose Services, FFmpeg Image, Dependencies and Config Namespaces
 - **Status:** completed
@@ -70,6 +70,11 @@
   - Public routes return `302` through `@Redirect()` with a dynamic URL; the Location host is `minio.localhost:9000` (S3_PUBLIC_ENDPOINT) and the test container follows it through the Compose alias — the same URL a browser on the host would get.
 
 ### SI-03.9 — OpenAPI Contract and AI Documentation
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** openapi-export.integration-spec 12/12 (3 new: the 9 video operations with summary and `videos` tag; bearer security exactly on the 5 owner routes; 302 documented on `/stream`)
+- **Observations:**
+  - `openapi.json` regenerated with `npm run openapi:export` (+987 lines: 9 video paths, request/response DTO schemas with explicit `@ApiProperty`).
+  - Plan text said '8 video operations' in SI-03.9; the API Contracts list 9 (5 owner + 4 public) — corrected in the plan.
+  - `CLAUDE.md` (root: queue = BullMQ/Redis, MinIO, worker) and `nestjs-project/CLAUDE.md` (new services and readiness checks, worker/migration/openapi commands, e2e `maxWorkers: 1`, ESLint test overrides, new 'Videos (Phase 03)' section with code map, endpoints, lifecycle, env vars and gotchas). Every `src/`, `test/`, `docs/` path and npm script cited was checked to exist.
+  - `api.http` gained the video requests (10–18); `docs/diagrams/software-arch.mermaid` queue container changed from `TBD` to `BullMQ (Redis)`.
+  - `next-frontend/openapi.json` was not synced (`scripts/sync-openapi.sh`): the frontend is out of scope for this phase.

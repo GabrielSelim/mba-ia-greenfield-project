@@ -299,7 +299,7 @@ Deliver video upload of files up to 10 GiB straight to object storage (S3 multip
 
 | File | Layer | Verifies |
 |------|-------|----------|
-| `src/openapi-export.integration-spec.ts` | Integration | Exported spec contains the 8 video operations; owner routes declare bearer security, public routes do not |
+| `src/openapi-export.integration-spec.ts` | Integration | Exported spec contains the 9 video operations (5 owner, 4 public); owner routes declare bearer security, public routes do not |
 
 **Dependencies:** SI-03.8
 
