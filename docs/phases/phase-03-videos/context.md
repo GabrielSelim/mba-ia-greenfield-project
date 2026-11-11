@@ -3,14 +3,15 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-11T13:26:09-04:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-11T13:59:05-04:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-11T14:01:56-04:00"
+  docs/phases/phase-03-videos/library-refs.md: "2026-11-11T14:03:19-04:00"
   docs/decisions/technical-decisions-phase-01-configuracao-base.md: "2026-11-11T13:29:59-04:00"
   docs/decisions/technical-decisions-phase-02-auth.md: "2026-11-11T13:29:59-04:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-11-11T13:29:59-04:00"
   docs/phases/phase-02-auth/context.md: "2026-11-11T13:29:59-04:00"
   docs/phases/phase-02-auth/phase-02-auth.md: "2026-11-11T13:29:59-04:00"
   .claude/skills/testing-guide-nestjs-project/SKILL.md: "2026-11-11T13:26:09-04:00"
-  .claude/skills/testing-guide-nestjs-project/references/external-systems.md: "2026-11-11T13:26:09-04:00"
+  .claude/skills/testing-guide-nestjs-project/references/external-systems.md: "2026-11-11T14:03:45-04:00"
   .claude/skills/testing-guide-nestjs-project/artifacts/future-types.md: "2026-11-11T13:26:09-04:00"
 ---
 
@@ -51,16 +52,17 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | pending | — | bullmq, @nestjs/bullmq |
-| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | Upload Protocol for Files up to 10GB | pending | — | @aws-sdk/client-s3, @aws-sdk/s3-request-presigner |
-| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Usage — SDK, Layout, Signing | pending | — | @aws-sdk/client-s3, @aws-sdk/s3-request-presigner |
-| phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Repo-wide | Video Worker Runtime | pending | — | — |
-| phase-03-videos/TD-05 | technical-decisions-phase-03-videos.md | Backend | FFmpeg Integration and Source Access | pending | — | — (system `ffmpeg`/`ffprobe`) |
-| phase-03-videos/TD-06 | technical-decisions-phase-03-videos.md | Backend | Thumbnail Generation Strategy | pending | — | — |
-| phase-03-videos/TD-07 | technical-decisions-phase-03-videos.md | Cross-layer | Unique Video URL Identifier | pending | — | — |
-| phase-03-videos/TD-08 | technical-decisions-phase-03-videos.md | Cross-layer | Streaming and Download Delivery | pending | — | @aws-sdk/s3-request-presigner |
-| phase-03-videos/TD-09 | technical-decisions-phase-03-videos.md | Backend | Video Status Lifecycle and Failure Handling | pending | — | — |
-| phase-03-videos/TD-10 | technical-decisions-phase-03-videos.md | Backend | Upload Limits and Accepted Formats | pending | — | — |
+| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | A (BullMQ + Redis) | bullmq@^6.7.4, @nestjs/bullmq@^12.0.1 |
+| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | Upload Protocol for Files up to 10GB | decided | C (S3 multipart with presigned part URLs) | @aws-sdk/client-s3@^3.1166.0, @aws-sdk/s3-request-presigner@^3.1166.0 |
+| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Usage — SDK, Layout, Signing | decided | A (AWS SDK v3, one private bucket, per-video prefix, internal + public endpoint) | @aws-sdk/client-s3@^3.1166.0, @aws-sdk/s3-request-presigner@^3.1166.0 |
+| phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Repo-wide | Video Worker Runtime | decided | A (same codebase, separate entrypoint/container) | — |
+| phase-03-videos/TD-05 | technical-decisions-phase-03-videos.md | Backend | FFmpeg Integration and Source Access | decided | B (spawn ffprobe/ffmpeg over presigned URL) | — (system `ffmpeg`/`ffprobe`) |
+| phase-03-videos/TD-06 | technical-decisions-phase-03-videos.md | Backend | Thumbnail Generation Strategy | decided | B (10% offset capped at 10s, JPEG 1280px) | — |
+| phase-03-videos/TD-07 | technical-decisions-phase-03-videos.md | Cross-layer | Unique Video URL Identifier | decided | B (11-char base64url random slug) | — |
+| phase-03-videos/TD-08 | technical-decisions-phase-03-videos.md | Cross-layer | Streaming and Download Delivery | decided | B (302 to presigned storage URL) | @aws-sdk/s3-request-presigner@^3.1166.0 |
+| phase-03-videos/TD-09 | technical-decisions-phase-03-videos.md | Backend | Video Status Lifecycle and Failure Handling | decided | A (draft → processing → ready / failed) | — |
+| phase-03-videos/TD-10 | technical-decisions-phase-03-videos.md | Backend | Upload Limits and Accepted Formats | decided | A (10 GiB, 100 MiB parts, MIME allowlist) | — |
+| phase-03-videos/TD-11 | technical-decisions-phase-03-videos.md | Cross-layer | Read Access Policy for Videos | decided | A (ready videos public by unique URL; others 404) | — |
 
 _Source files:_
 
@@ -78,61 +80,75 @@ _Source files:_
 | Processamento automático do vídeo após upload (extração de duração e metadados) | phase-03-videos/TD-05, phase-03-videos/TD-09 |
 | Geração automática de thumbnail a partir de um frame do vídeo | phase-03-videos/TD-06 |
 | URL única por vídeo, sem conflito com outros vídeos | phase-03-videos/TD-07 |
-| Reprodução via streaming (sem necessidade de download completo) | phase-03-videos/TD-08 |
-| Download do vídeo pelo usuário | phase-03-videos/TD-08 |
+| Reprodução via streaming (sem necessidade de download completo) | phase-03-videos/TD-08, phase-03-videos/TD-11 |
+| Download do vídeo pelo usuário | phase-03-videos/TD-08, phase-03-videos/TD-11 |
 
 ## Decisions Detail
-
-_No decided current-scope TDs yet — all ten TDs are `pending` (see Decisions Index). Recommendations are listed for review:_
 
 ### phase-03-videos/TD-01
 
 **Recommendation:** BullMQ + Redis — native NestJS integration and built-in retry/backoff/deduplication cover the "process one heavy job reliably" need with the least custom code; the dual-write risk is handled by an idempotent consumer (see TD-09).
-**Libraries:** bullmq, @nestjs/bullmq
+**Decision:** A — queue `video-processing` on `redis:7.4.12-alpine` with `--maxmemory-policy noeviction`; producer in the API, consumer only in the worker.
+**Libraries:** `bullmq@^6.7.4`, `@nestjs/bullmq@^12.0.1`
 
 ### phase-03-videos/TD-02
 
 **Recommendation:** S3 multipart with presigned part URLs — the only option that keeps every video byte off the API and meets the 10GB target within S3 limits, with part-level retry.
-**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner
+**Decision:** C — `POST /videos` → `POST /videos/{slug}/upload-parts` → `POST /videos/{slug}/complete-upload`; `DELETE /videos/{slug}/upload` aborts. `VideosController` overrides the inherited throttler with 120 req/min (ICC-1).
+**Libraries:** `@aws-sdk/client-s3@^3.1166.0`, `@aws-sdk/s3-request-presigner@^3.1166.0`
 
 ### phase-03-videos/TD-03
 
 **Recommendation:** AWS SDK v3 with one private bucket and per-video key prefixes (`videos/{id}/original`, `videos/{id}/thumbnail.jpg`); local MinIO from `cgr.dev/chainguard/minio` pinned by digest, bucket created by a one-shot `amazon/aws-cli` service.
-**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner
+**Decision:** A — internal client on `S3_ENDPOINT=http://minio:9000`; client-facing URLs signed with `S3_PUBLIC_ENDPOINT=http://minio.localhost:9000` (network alias `minio.localhost` on the `minio` service, IC-2); tests use the real MinIO (IC-1). Both clients use `requestChecksumCalculation: WHEN_REQUIRED` (see `library-refs.md`).
+**Libraries:** `@aws-sdk/client-s3@^3.1166.0`, `@aws-sdk/s3-request-presigner@^3.1166.0`
 
 ### phase-03-videos/TD-04
 
 **Recommendation:** same NestJS codebase with a separate entrypoint (`src/worker.ts`, application context without HTTP) running in its own `video-worker` Compose service built from the same Dockerfile (with FFmpeg).
+**Decision:** A.
 **Libraries:** —
 
 ### phase-03-videos/TD-05
 
 **Recommendation:** spawn `ffprobe`/`ffmpeg` directly (no deprecated wrapper) and read the source through a presigned HTTP URL, so 10GB sources need no local disk.
+**Decision:** B.
 **Libraries:** — (system binaries)
 
 ### phase-03-videos/TD-06
 
 **Recommendation:** frame at `min(duration × 0.1, 10s)`, JPEG scaled to width 1280, stored at `videos/{id}/thumbnail.jpg`.
+**Decision:** B.
 **Libraries:** —
 
 ### phase-03-videos/TD-07
 
 **Recommendation:** 11-char base64url slug from 8 random bytes, `UNIQUE` index and bounded retry on `23505`.
+**Decision:** B.
 **Libraries:** —
 
 ### phase-03-videos/TD-08
 
 **Recommendation:** API authorizes and answers `302` to a short-lived presigned storage URL (inline for stream, `attachment` for download); Range/`206 Partial Content` served by the storage.
-**Libraries:** @aws-sdk/s3-request-presigner
+**Decision:** B — `/videos/{slug}/stream`, `/download`, `/thumbnail`.
+**Libraries:** `@aws-sdk/s3-request-presigner@^3.1166.0`
 
 ### phase-03-videos/TD-09
 
 **Recommendation:** `draft → processing → ready | failed`; processing enqueued with `jobId = videoId`; 3 attempts with exponential backoff; idempotent worker acting only on `processing` videos.
+**Decision:** A — `attempts: 3`, exponential backoff 5s; `UnrecoverableError` for invalid media/missing object.
 **Libraries:** —
 
 ### phase-03-videos/TD-10
 
 **Recommendation:** max 10 GiB, part size 100 MiB (configurable), MIME allowlist (`video/mp4`, `video/webm`, `video/quicktime`, `video/x-matroska`), real size verified with `HeadObject` after completion.
+**Decision:** A — limit fixed at 10,737,418,240 bytes (AMB-1).
+**Libraries:** —
+
+### phase-03-videos/TD-11
+
+**Recommendation:** link-only public read of ready videos is the product rule from the overview, needs no change in later phases, and hides non-ready videos behind 404.
+**Decision:** A — owner follows any status at `GET /videos/{slug}/status` (authenticated).
 **Libraries:** —
 
 ## Inherited Decisions Detail
@@ -189,7 +205,7 @@ _No decided current-scope TDs yet — all ten TDs are `pending` (see Decisions I
 - Docker networking: services talk to each other by Compose service name (`db`, `mailpit`), never `localhost`. _(from phase 01 / `CLAUDE.md`)_
 - Every endpoint is protected by the global `JwtAuthGuard`; public routes use `@Public()`; the authenticated user arrives as `JwtPayload { sub, email }` via `@CurrentUser()`. _(from phase 02)_
 - Services throw `DomainException` subclasses (`src/common/exceptions/domain.exception.ts`), never Nest HTTP exceptions; `DomainExceptionFilter` maps them. _(from phase 02)_
-- Each user owns exactly one channel (`channels.user_id` unique), created atomically at registration by `ChannelsService`. _(from phase 02)_
+- Each user owns exactly one channel (`channels.user_id` unique), created atomically at registration by `ChannelsService`. _(from phase 02)_ Phase 03 adds `ChannelsService.findByUserId()` to resolve the caller's channel (DG-1).
 - Integration/e2e suites share the `db` database and run `--runInBand`; tables are cleaned with `cleanAllTables()` from `src/test/create-test-data-source.ts`. _(from phase 02)_
 - External systems in tests are real Compose services (PostgreSQL, Mailpit) — no mocks of what Compose can run. _(from phase 02 / testing guide)_
 
